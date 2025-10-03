@@ -381,7 +381,7 @@ fn query_jobs_by_provider(
     let provider_addr = deps.api.addr_validate(&provider)?;
     let limit = limit.unwrap_or(10).min(50) as usize;
 
-    let start = start_after.map(|id| Bound::exclusive((provider_addr.clone(), id)));
+    let start = start_after.map(|id| Bound::exclusive(id));
 
     let job_ids: Vec<u64> = JOBS_BY_PROVIDER
         .prefix(&provider_addr)
