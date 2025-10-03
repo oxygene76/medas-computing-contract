@@ -1,0 +1,29 @@
+# Rust/Cargo
+target/
+**/*.rs.bk
+*.pdb
+Cargo.lock
+
+# CosmWasm artifacts
+artifacts/
+*.wasm
+
+# Schema
+schema/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.wasm.gz
+
+# Test artifacts
+.cache/
