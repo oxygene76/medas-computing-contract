@@ -1,70 +1,38 @@
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
-use cw_storage_plus::{Item, Map};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use cosmwasm_std::StdError;
+use thiserror::Error;
 
-use crate::msg::{PricingTier, ServiceCapability};
+#[derive(Error, Debug)]
+pub enum ContractError {
+    #[error("{0}")]
+    Std(#[from] StdError),
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Config {
-    pub community_pool: Addr,
-    pub community_fee_percent: u64,
+    #[error("Unauthorized")]
+    Unauthorized {},
+
+    #[error("Provider already registered")]
+    ProviderAlreadyRegistered {},
+
+    #[error("Provider not found")]
+    ProviderNotFound {},
+
+    #[error("Provider not active")]
+    ProviderNotActive {},
+
+    #[error("Job not found")]
+    JobNotFound {},
+
+    #[error("Invalid provider data")]
+    InvalidProviderData {},
+
+    #[error("No payment provided")]
+    NoPayment {},
+
+    #[error("Insufficient payment: expected {expected}, received {received}")]
+    InsufficientPayment { expected: String, received: String },
+
+    #[error("Invalid job parameters")]
+    InvalidJobParameters {},
+
+    #[error("Job not in correct state")]
+    InvalidJobState {},
 }
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Provider {
-    pub address: Addr,
-    pub name: String,
-    pub capabilities: Vec<ServiceCapability>,
-    pub pricing: HashMap<String, PricingTier>,
-    pub endpoint: String,
-    pub capacity: u32,
-    pub active_jobs: u32,
-    pub total_completed: u64,
-    pub total_failed: u64,
-    pub reputation: Decimal,
-    pub active: bool,
-    pub registered_at: Timestamp,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct Job {
-    pub id: u64,
-    pub client: Addr,
-    pub provider: Addr,
-    pub job_type: String,
-    pub parameters: String,
-    pub payment_amount: Uint128,
-    pub status: JobStatus,
-    pub result_hash: Option<String>,
-    pub result_url: Option<String>,
-    pub created_at: Timestamp,
-    pub completed_at: Option<Timestamp>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub enum JobStatus {
-    Submitted,
-    Processing,
-    Completed,
-    Failed,
-}
-
-impl JobStatus {
-    pub fn to_string(&self) -> String {
-        match self {
-            JobStatus::Submitted => "submitted".to_string(),
-            JobStatus::Processing => "processing".to_string(),
-            JobStatus::Completed => "completed".to_string(),
-            JobStatus::Failed => "failed".to_string(),
-        }
-    }
-}
-
-pub const CONFIG: Item<Config> = Item::new("config");
-pub const PROVIDERS: Map<&Addr, Provider> = Map::new("providers");
-pub const JOBS: Map<u64, Job> = Map::new("jobs");
-pub const NEXT_JOB_ID: Item<u64> = Item::new("next_job_id");
-pub const JOBS_BY_PROVIDER: Map<(&Addr, u64), ()> = Map::new("jobs_by_provider");
-pub const JOBS_BY_CLIENT: Map<(&Addr, u64), ()> = Map::new("jobs_by_client");
