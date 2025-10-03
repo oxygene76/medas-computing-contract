@@ -219,7 +219,8 @@ pub fn execute_complete_job(
     // Calculate and distribute payment
     let config = CONFIG.load(deps.storage)?;
     let community_fee = job.payment_amount * Decimal::percent(config.community_fee_percent);
-    let provider_fee = job.payment_amount.checked_sub(community_fee)?;
+    let provider_fee = job.payment_amount.checked_sub(community_fee)
+    .map_err(|e| ContractError::Std(cosmwasm_std::StdError::generic_err(e.to_string())))?;
 
     let mut messages = vec![];
 
@@ -325,10 +326,12 @@ fn query_list_providers(
 ) -> StdResult<ProvidersResponse> {
     let limit = limit.unwrap_or(50).min(100) as usize;
 
-    let start = start_after.map(|s| {
-    let addr = deps.api.addr_validate(&s).unwrap();
-    Bound::exclusive(&addr)
-    });
+    let start = if let Some(s) = start_after {
+        let addr = deps.api.addr_validate(&s)?;
+        Some(Bound::exclusive(addr))
+    } else {
+        None
+    };
 
     let providers: Vec<ProviderResponse> = PROVIDERS
         .range(deps.storage, start, None, Order::Ascending)
