@@ -311,4 +311,238 @@ mod tests {
 
         assert!(matches!(err, medas_computing_contract::ContractError::Unauthorized {}));
     }
+    #[test]
+    fn test_double_registration() {
+        let mut deps = mock_dependencies();
+
+        let init_msg = InstantiateMsg {
+            community_pool: "medas1community...".to_string(),
+            community_fee_percent: 15,
+        };
+        instantiate(deps.as_mut(), mock_env(), mock_info("creator", &[]), init_msg).unwrap();
+
+        let mut pricing = HashMap::new();
+        pricing.insert("pi_calculation".to_string(), PricingTier {
+            base_price: Decimal::percent(1),
+            unit: "digit".to_string(),
+        });
+
+        let register = ExecuteMsg::RegisterProvider {
+            name: "Provider".to_string(),
+            capabilities: vec![ServiceCapability {
+                service_type: "pi_calculation".to_string(),
+                max_complexity: 100000,
+                avg_completion_time: 180,
+            }],
+            pricing: pricing.clone(),
+            endpoint: "https://test.com".to_string(),
+        };
+
+        // Erste Registrierung
+        execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), register.clone()).unwrap();
+
+        // Zweite Registrierung sollte fehlschlagen
+        let err = execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), register).unwrap_err();
+        assert!(matches!(err, medas_computing_contract::ContractError::ProviderAlreadyRegistered {}));
+    }
+
+    #[test]
+    fn test_submit_job_without_payment() {
+        let mut deps = mock_dependencies();
+
+        let init_msg = InstantiateMsg {
+            community_pool: "medas1community...".to_string(),
+            community_fee_percent: 15,
+        };
+        instantiate(deps.as_mut(), mock_env(), mock_info("creator", &[]), init_msg).unwrap();
+
+        let mut pricing = HashMap::new();
+        pricing.insert("pi_calculation".to_string(), PricingTier {
+            base_price: Decimal::percent(1),
+            unit: "digit".to_string(),
+        });
+
+        let register = ExecuteMsg::RegisterProvider {
+            name: "Provider".to_string(),
+            capabilities: vec![ServiceCapability {
+                service_type: "pi_calculation".to_string(),
+                max_complexity: 100000,
+                avg_completion_time: 180,
+            }],
+            pricing,
+            endpoint: "https://test.com".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), register).unwrap();
+
+        let submit = ExecuteMsg::SubmitJob {
+            provider: "provider".to_string(),
+            job_type: "pi_calculation".to_string(),
+            parameters: "{}".to_string(),
+        };
+
+        // Job ohne Payment sollte fehlschlagen
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("client", &[]),  // Kein Payment
+            submit,
+        ).unwrap_err();
+        
+        assert!(matches!(err, medas_computing_contract::ContractError::NoPayment {}));
+    }
+
+    #[test]
+    fn test_submit_job_to_inactive_provider() {
+        let mut deps = mock_dependencies();
+
+        let init_msg = InstantiateMsg {
+            community_pool: "medas1community...".to_string(),
+            community_fee_percent: 15,
+        };
+        instantiate(deps.as_mut(), mock_env(), mock_info("creator", &[]), init_msg).unwrap();
+
+        let mut pricing = HashMap::new();
+        pricing.insert("pi_calculation".to_string(), PricingTier {
+            base_price: Decimal::percent(1),
+            unit: "digit".to_string(),
+        });
+
+        let register = ExecuteMsg::RegisterProvider {
+            name: "Provider".to_string(),
+            capabilities: vec![ServiceCapability {
+                service_type: "pi_calculation".to_string(),
+                max_complexity: 100000,
+                avg_completion_time: 180,
+            }],
+            pricing,
+            endpoint: "https://test.com".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), register).unwrap();
+
+        // Provider deaktiviert sich
+        let deactivate = ExecuteMsg::UpdateProviderStatus { active: false };
+        execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), deactivate).unwrap();
+
+        // Job-Submission sollte fehlschlagen
+        let submit = ExecuteMsg::SubmitJob {
+            provider: "provider".to_string(),
+            job_type: "pi_calculation".to_string(),
+            parameters: "{}".to_string(),
+        };
+
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("client", &coins(1_000_000, "umedas")),
+            submit,
+        ).unwrap_err();
+
+        assert!(matches!(err, medas_computing_contract::ContractError::ProviderNotActive {}));
+    }
+
+    #[test]
+    fn test_submit_job_to_nonexistent_provider() {
+        let mut deps = mock_dependencies();
+
+        let init_msg = InstantiateMsg {
+            community_pool: "medas1community...".to_string(),
+            community_fee_percent: 15,
+        };
+        instantiate(deps.as_mut(), mock_env(), mock_info("creator", &[]), init_msg).unwrap();
+
+        let submit = ExecuteMsg::SubmitJob {
+            provider: "nonexistent".to_string(),
+            job_type: "pi_calculation".to_string(),
+            parameters: "{}".to_string(),
+        };
+
+        let err = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("client", &coins(1_000_000, "umedas")),
+            submit,
+        ).unwrap_err();
+
+        assert!(matches!(err, medas_computing_contract::ContractError::ProviderNotFound {}));
+    }
+
+    #[test]
+    fn test_payment_distribution_calculation() {
+        let mut deps = mock_dependencies();
+
+        let init_msg = InstantiateMsg {
+            community_pool: "medas1community...".to_string(),
+            community_fee_percent: 15,
+        };
+        instantiate(deps.as_mut(), mock_env(), mock_info("creator", &[]), init_msg).unwrap();
+
+        let mut pricing = HashMap::new();
+        pricing.insert("pi_calculation".to_string(), PricingTier {
+            base_price: Decimal::percent(1),
+            unit: "digit".to_string(),
+        });
+
+        let register = ExecuteMsg::RegisterProvider {
+            name: "Provider".to_string(),
+            capabilities: vec![ServiceCapability {
+                service_type: "pi_calculation".to_string(),
+                max_complexity: 100000,
+                avg_completion_time: 180,
+            }],
+            pricing,
+            endpoint: "https://test.com".to_string(),
+        };
+        execute(deps.as_mut(), mock_env(), mock_info("provider", &[]), register).unwrap();
+
+        let submit = ExecuteMsg::SubmitJob {
+            provider: "provider".to_string(),
+            job_type: "pi_calculation".to_string(),
+            parameters: "{}".to_string(),
+        };
+
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("client", &coins(1_000_000, "umedas")),
+            submit,
+        ).unwrap();
+
+        let job_id: u64 = res.attributes.iter()
+            .find(|a| a.key == "job_id")
+            .unwrap()
+            .value
+            .parse()
+            .unwrap();
+
+        let complete = ExecuteMsg::CompleteJob {
+            job_id,
+            result_hash: "test".to_string(),
+            result_url: "test".to_string(),
+        };
+        
+        let res = execute(
+            deps.as_mut(),
+            mock_env(),
+            mock_info("provider", &[]),
+            complete,
+        ).unwrap();
+
+        // Prüfe Payment-Verteilung: 15% = 150,000, 85% = 850,000
+        assert_eq!(res.messages.len(), 2);
+        
+        // Prüfe Attribute für Community und Provider Fees
+        let community_fee = res.attributes.iter()
+            .find(|a| a.key == "community_fee")
+            .unwrap()
+            .value
+            .clone();
+        let provider_payment = res.attributes.iter()
+            .find(|a| a.key == "provider_payment")
+            .unwrap()
+            .value
+            .clone();
+
+        assert_eq!(community_fee, "150000");
+        assert_eq!(provider_payment, "850000");
+    }
 }
