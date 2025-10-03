@@ -326,37 +326,53 @@ fn query_list_providers(
 ) -> StdResult<ProvidersResponse> {
     let limit = limit.unwrap_or(50).min(100) as usize;
 
-    let start = if let Some(s) = start_after {
-        let addr = deps.api.addr_validate(&s)?;
-        Some(Bound::exclusive(&addr))
+    let providers: StdResult<Vec<ProviderResponse>> = if let Some(start_addr_str) = start_after {
+        let start_addr = deps.api.addr_validate(&start_addr_str)?;
+        PROVIDERS
+            .range(deps.storage, Some(Bound::exclusive(&start_addr)), None, Order::Ascending)
+            .take(limit)
+            .map(|item| {
+                let (_, provider) = item?;
+                Ok(ProviderResponse {
+                    address: provider.address.to_string(),
+                    name: provider.name,
+                    capabilities: provider.capabilities,
+                    pricing: provider.pricing,
+                    endpoint: provider.endpoint,
+                    capacity: provider.capacity,
+                    active_jobs: provider.active_jobs,
+                    total_completed: provider.total_completed,
+                    reputation: provider.reputation,
+                    active: provider.active,
+                    registered_at: provider.registered_at,
+                })
+            })
+            .collect()
     } else {
-        None
+        PROVIDERS
+            .range(deps.storage, None, None, Order::Ascending)
+            .take(limit)
+            .map(|item| {
+                let (_, provider) = item?;
+                Ok(ProviderResponse {
+                    address: provider.address.to_string(),
+                    name: provider.name,
+                    capabilities: provider.capabilities,
+                    pricing: provider.pricing,
+                    endpoint: provider.endpoint,
+                    capacity: provider.capacity,
+                    active_jobs: provider.active_jobs,
+                    total_completed: provider.total_completed,
+                    reputation: provider.reputation,
+                    active: provider.active,
+                    registered_at: provider.registered_at,
+                })
+            })
+            .collect()
     };
 
-    let providers: Vec<ProviderResponse> = PROVIDERS
-        .range(deps.storage, start, None, Order::Ascending)
-        .take(limit)
-        .map(|item| {
-            let (_, provider) = item?;
-            Ok(ProviderResponse {
-                address: provider.address.to_string(),
-                name: provider.name,
-                capabilities: provider.capabilities,
-                pricing: provider.pricing,
-                endpoint: provider.endpoint,
-                capacity: provider.capacity,
-                active_jobs: provider.active_jobs,
-                total_completed: provider.total_completed,
-                reputation: provider.reputation,
-                active: provider.active,
-                registered_at: provider.registered_at,
-            })
-        })
-        .collect::<StdResult<Vec<_>>>()?;
-
-    Ok(ProvidersResponse { providers })
+    Ok(ProvidersResponse { providers: providers? })
 }
-
 fn query_job(deps: Deps, job_id: u64) -> StdResult<JobResponse> {
     let job = JOBS.load(deps.storage, job_id)?;
 
