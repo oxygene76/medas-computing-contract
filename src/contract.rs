@@ -326,8 +326,8 @@ fn query_list_providers(
     let limit = limit.unwrap_or(50).min(100) as usize;
 
     let start = start_after.map(|s| {
-        let addr = deps.api.addr_validate(&s).unwrap();
-        Bound::exclusive(addr)
+    let addr = deps.api.addr_validate(&s).unwrap();
+    Bound::exclusive(&addr)
     });
 
     let providers: Vec<ProviderResponse> = PROVIDERS
@@ -406,7 +406,7 @@ fn query_jobs_by_client(
     let client_addr = deps.api.addr_validate(&client)?;
     let limit = limit.unwrap_or(10).min(50) as usize;
 
-    let start = start_after.map(|id| Bound::exclusive((client_addr.clone(), id)));
+    let start = start_after.map(|id| Bound::exclusive(id));
 
     let job_ids: Vec<u64> = JOBS_BY_CLIENT
         .prefix(&client_addr)
