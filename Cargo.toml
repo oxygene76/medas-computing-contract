@@ -50,3 +50,7 @@ overflow-checks = true
 [package.metadata.wasm]
 # Damit der build reproducible bleibt:
 wasm-opt = false   # erst mal kein wasm-opt, um Bulk-Memory zu vermeiden
+
+# Cargo.toml (im Contract-Root)
+[patch.crates-io]
+base64ct = "=1.6.0"
