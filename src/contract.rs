@@ -328,7 +328,7 @@ fn query_list_providers(
 
     let start = if let Some(s) = start_after {
         let addr = deps.api.addr_validate(&s)?;
-        Some(Bound::exclusive(addr))
+        Some(Bound::exclusive(&addr))
     } else {
         None
     };
