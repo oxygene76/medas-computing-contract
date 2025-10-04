@@ -1,3 +1,7 @@
-# .cargo/config.toml  (im Projekt)
 [target.wasm32-unknown-unknown]
-rustflags = ["-C", "target-feature=-reference-types,-bulk-memory,-multivalue"]
+rustflags = [
+  "-C", "link-arg=-s",
+  "-C", "target-feature=-bulk-memory",
+  "-C", "target-feature=-sign-ext",
+  "-C", "target-feature=-reference-types",
+]
