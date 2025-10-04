@@ -2,51 +2,21 @@
 name = "medas-computing-contract"
 version = "0.1.0"
 edition = "2021"
-resolver = "2"
 
-# -------------------------
-# CosmWasm Contract Setup
-# -------------------------
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[features]
-default = ["staking"]
-# optional features je nach Contract-Logik
-staking = []
-
 [dependencies]
-cosmwasm-std = "1.5.0"
-cosmwasm-schema = "1.5.0"
-cosmwasm-storage = "1.5.0"
-cw2 = "1.1.0"
-cw20 = "1.1.0"
-
-thiserror = "1.0"
+cosmwasm-std = "1.2"
+cosmwasm-schema = "1.2"
+cw-storage-plus = "1.1"
+cw2 = "1.0"
 schemars = "0.8"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+thiserror = "1.0"
 
 [dev-dependencies]
-cosmwasm-schema = "1.5.0"
-cosmwasm-std = { version = "1.5.0", features = ["stargate"] }
-cw-multi-test = "0.16.5"
+cw-multi-test = "0.16"
 
-# -------------------------
-# Release build settings
-# -------------------------
-[profile.release]
-opt-level = "z"       # optimiert für Größe
-lto = true            # link-time optimization
-codegen-units = 1     # bessere Optimierung
-debug = false
-panic = "abort"
-incremental = false
-overflow-checks = true
-
-# -------------------------
-# Target Config für wasm32
-# -------------------------
-[package.metadata.wasm]
-# Damit der build reproducible bleibt:
-wasm-opt = false   # erst mal kein wasm-opt, um Bulk-Memory zu vermeiden
+[patch.crates-io]
+base64ct = { version = "1.6.0" }
