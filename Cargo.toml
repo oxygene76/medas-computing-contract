@@ -17,6 +17,3 @@ thiserror = "1.0"
 
 [dev-dependencies]
 cw-multi-test = "0.16"
-
-[patch.crates-io]
-base64ct = { version = "1.6.0" }
