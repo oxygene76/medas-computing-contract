@@ -310,9 +310,14 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
             start_after,
             limit,
         } => to_json_binary(&query_jobs_by_client(deps, client, start_after, limit)?),
+        QueryMsg::ListActiveProviders {} => {
+            to_json_binary(&query_list_active_providers(deps)?)
+        }
+        QueryMsg::GetProviderStats { address } => {
+            to_json_binary(&query_provider_stats(deps, address)?)
+        }
     }
 }
-
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
     Ok(ConfigResponse {
@@ -721,7 +726,7 @@ pub fn execute_process_inactive_providers(
 /// Can update job timeout and heartbeat timeout settings
 pub fn execute_update_config(
     deps: DepsMut,
-    info: MessageInfo,
+    _info: MessageInfo,
     default_job_timeout: Option<u64>,
     heartbeat_timeout: Option<u64>,
 ) -> Result<Response, ContractError> {
@@ -752,7 +757,7 @@ pub fn execute_update_config(
 /// Admin only - useful in case of critical issues
 pub fn execute_pause_contract(
     deps: DepsMut,
-    info: MessageInfo,
+    _info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
     
@@ -773,7 +778,7 @@ pub fn execute_pause_contract(
 /// Admin only
 pub fn execute_unpause_contract(
     deps: DepsMut,
-    info: MessageInfo,
+    _info: MessageInfo,
 ) -> Result<Response, ContractError> {
     let mut config = CONFIG.load(deps.storage)?;
     
@@ -822,4 +827,55 @@ pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, Co
         .add_attribute("action", "migrate")
         .add_attribute("from_version", CONTRACT_VERSION)
         .add_attribute("to_version", env!("CARGO_PKG_VERSION")))
+}
+// Neue Query-Funktionen hinzufügen
+fn query_list_active_providers(deps: Deps) -> StdResult<ProvidersResponse> {
+    let providers: StdResult<Vec<ProviderResponse>> = PROVIDERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .filter_map(|item| {
+            match item {
+                Ok((_, provider)) => {
+                    if provider.active {
+                        Some(Ok(ProviderResponse {
+                            address: provider.address.to_string(),
+                            name: provider.name,
+                            capabilities: provider.capabilities,
+                            pricing: provider.pricing,
+                            endpoint: provider.endpoint,
+                            capacity: provider.capacity,
+                            active_jobs: provider.active_jobs,
+                            total_completed: provider.total_completed,
+                            reputation: provider.reputation,
+                            active: provider.active,
+                            registered_at: provider.registered_at,
+                        }))
+                    } else {
+                        None
+                    }
+                }
+                Err(e) => Some(Err(e)),
+            }
+        })
+        .collect();
+    
+    Ok(ProvidersResponse { providers: providers? })
+}
+
+fn query_provider_stats(deps: Deps, address: String) -> StdResult<ProviderResponse> {
+    let addr = deps.api.addr_validate(&address)?;
+    let provider = PROVIDERS.load(deps.storage, &addr)?;
+    
+    Ok(ProviderResponse {
+        address: provider.address.to_string(),
+        name: provider.name,
+        capabilities: provider.capabilities,
+        pricing: provider.pricing,
+        endpoint: provider.endpoint,
+        capacity: provider.capacity,
+        active_jobs: provider.active_jobs,
+        total_completed: provider.total_completed,
+        reputation: provider.reputation,
+        active: provider.active,
+        registered_at: provider.registered_at,
+    })
 }
