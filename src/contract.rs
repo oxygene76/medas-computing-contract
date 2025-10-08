@@ -569,7 +569,7 @@ pub fn execute_fail_job(
         .add_attribute("action", "fail_job")
         .add_attribute("job_id", job_id.to_string())
         .add_attribute("reason", reason)
-        .add_attribute("refund_amount", job.payment_amount.amount.to_string()))
+        .add_attribute("refund_amount", job.payment_amount.to_string())) 
 }
 
 /// Cancel a job - client can cancel within 5 minutes and receive full refund
@@ -622,7 +622,7 @@ pub fn execute_cancel_job(
         .add_message(refund_msg)
         .add_attribute("action", "cancel_job")
         .add_attribute("job_id", job_id.to_string())
-        .add_attribute("refund_amount", job.payment_amount.amount.to_string()))
+        .add_attribute("refund_amount", job.payment_amount.to_string()))
 }
 
 /// Process timed out jobs - automatically fails and refunds jobs that exceeded their deadline
@@ -664,8 +664,11 @@ pub fn execute_process_timed_out_jobs(
             
             // Prepare refund message
             messages.push(CosmosMsg::Bank(BankMsg::Send {
-                to_address: job.client.to_string(),
-                amount: vec![job.payment_amount.clone()],
+            to_address: job.client.to_string(),
+            amount: vec![Coin {
+            denom: "umedas".to_string(),
+            amount: job.payment_amount,
+            }],
             }));
             
             processed_jobs.push(job_id);
