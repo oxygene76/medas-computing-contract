@@ -2,14 +2,15 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, 
     DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
 };
+
+
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
 
 use crate::error::ContractError;
-use crate::msg::{
-    ConfigResponse, ExecuteMsg, InstantiateMsg, JobResponse, JobsResponse, ProviderResponse,
-    ProvidersResponse, QueryMsg,
-};
+use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, JobResponse, JobsResponse, 
+    MigrateMsg, ProviderResponse, ProvidersResponse, QueryMsg};
+
 use crate::state::{
     Config, Job, JobStatus, Provider, CONFIG, JOBS, JOBS_BY_CLIENT, JOBS_BY_PROVIDER,
     NEXT_JOB_ID, PROVIDERS,
@@ -797,4 +798,23 @@ fn calculate_reputation(provider: &Provider) -> Decimal {
     // Calculate success rate as percentage
     let success_rate = provider.total_completed as f64 / total as f64;
     Decimal::from_ratio((success_rate * 100.0) as u128, 1u128)
+}
+#[entry_point]
+pub fn migrate(deps: DepsMut, _env: Env, msg: MigrateMsg) -> Result<Response, ContractError> {
+    // Update config with new timeout values if provided
+    let mut config = CONFIG.load(deps.storage)?;
+    
+    if let Some(timeout) = msg.default_job_timeout {
+        config.default_job_timeout = timeout;
+    }
+    if let Some(hb_timeout) = msg.heartbeat_timeout {
+        config.heartbeat_timeout = hb_timeout;
+    }
+    
+    CONFIG.save(deps.storage, &config)?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "migrate")
+        .add_attribute("from_version", CONTRACT_VERSION)
+        .add_attribute("to_version", env!("CARGO_PKG_VERSION")))
 }
