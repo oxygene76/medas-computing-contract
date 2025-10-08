@@ -150,7 +150,6 @@ pub struct JobResponse {
 pub struct JobsResponse {
     pub jobs: Vec<JobResponse>,
 }
-// CORRECT:
 #[cw_serde]
 pub struct MigrateMsg {
     pub default_job_timeout: Option<u64>,  // ADD THIS
