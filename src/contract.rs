@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, Decimal, Deps, DepsMut, Env,
-    MessageInfo, Order, Response, StdResult, Uint128,
+    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, 
+    DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
@@ -29,11 +29,13 @@ pub fn instantiate(
 
     let community_pool = deps.api.addr_validate(&msg.community_pool)?;
 
-    let config = Config {
-        community_pool,
-        community_fee_percent: msg.community_fee_percent,
+   let config = Config {
+    community_pool,
+    community_fee_percent: msg.community_fee_percent,
+    default_job_timeout: msg.default_job_timeout,      
+    heartbeat_timeout: msg.heartbeat_timeout,          
+    paused: false,                                    
     };
-
     CONFIG.save(deps.storage, &config)?;
     NEXT_JOB_ID.save(deps.storage, &1u64)?;
 
@@ -50,26 +52,39 @@ pub fn execute(
     info: MessageInfo,
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
+    // Check if contract is paused (except for unpause)
+    let config = CONFIG.load(deps.storage)?;
+    if config.paused && !matches!(msg, ExecuteMsg::UnpauseContract {}) {
+        return Err(ContractError::ContractPaused {});
+    }
+    
     match msg {
-        ExecuteMsg::RegisterProvider {
-            name,
-            capabilities,
-            pricing,
-            endpoint,
-        } => execute_register_provider(deps, env, info, name, capabilities, pricing, endpoint),
-        ExecuteMsg::SubmitJob {
-            provider,
-            job_type,
-            parameters,
-        } => execute_submit_job(deps, env, info, provider, job_type, parameters),
-        ExecuteMsg::CompleteJob {
-            job_id,
-            result_hash,
-            result_url,
-        } => execute_complete_job(deps, env, info, job_id, result_hash, result_url),
-        ExecuteMsg::UpdateProviderStatus { active } => {
-            execute_update_provider_status(deps, info, active)
-        }
+        ExecuteMsg::RegisterProvider { name, capabilities, pricing, endpoint } => 
+            execute_register_provider(deps, env, info, name, capabilities, pricing, endpoint),
+        ExecuteMsg::SubmitJob { provider, job_type, parameters } => 
+            execute_submit_job(deps, env, info, provider, job_type, parameters),
+        ExecuteMsg::CompleteJob { job_id, result_hash, result_url } => 
+            execute_complete_job(deps, env, info, job_id, result_hash, result_url),
+        ExecuteMsg::UpdateProviderStatus { active } => 
+            execute_update_provider_status(deps, info, active),
+        ExecuteMsg::HeartBeat {} => 
+            execute_heartbeat(deps, env, info),
+        ExecuteMsg::UpdateProvider { name, endpoint, pricing, capacity } => 
+            execute_update_provider(deps, env, info, name, endpoint, pricing, capacity),
+        ExecuteMsg::FailJob { job_id, reason } => 
+            execute_fail_job(deps, env, info, job_id, reason),
+        ExecuteMsg::CancelJob { job_id } => 
+            execute_cancel_job(deps, env, info, job_id),
+        ExecuteMsg::ProcessTimedOutJobs {} => 
+            execute_process_timed_out_jobs(deps, env, info),
+        ExecuteMsg::ProcessInactiveProviders {} => 
+            execute_process_inactive_providers(deps, env, info),
+        ExecuteMsg::UpdateConfig { default_job_timeout, heartbeat_timeout } => 
+            execute_update_config(deps, info, default_job_timeout, heartbeat_timeout),
+        ExecuteMsg::PauseContract {} => 
+            execute_pause_contract(deps, info),
+        ExecuteMsg::UnpauseContract {} => 
+            execute_unpause_contract(deps, info),
     }
 }
 
@@ -105,6 +120,7 @@ pub fn execute_register_provider(
         reputation: Decimal::percent(50),
         active: true,
         registered_at: env.block.time,
+        last_heartbeat: env.block.time.seconds(), 
     };
 
     PROVIDERS.save(deps.storage, &info.sender, &provider)?;
@@ -160,6 +176,8 @@ pub fn execute_submit_job(
         result_url: None,
         created_at: env.block.time,
         completed_at: None,
+        deadline: env.block.time.seconds() + config.default_job_timeout,  
+        failure_reason: None,             
     };
 
     JOBS.save(deps.storage, job_id, &job)?;
@@ -535,9 +553,12 @@ pub fn execute_fail_job(
     
     // Refund full payment to client
     let refund_msg = BankMsg::Send {
-        to_address: job.client.to_string(),
-        amount: vec![job.payment_amount.clone()],
-    };
+    to_address: job.client.to_string(),
+    amount: vec![Coin {
+        denom: "umedas".to_string(),
+        amount: job.payment_amount,
+    }],
+};
     
     Ok(Response::new()
         .add_message(refund_msg)
@@ -586,8 +607,11 @@ pub fn execute_cancel_job(
     
     // Refund full payment to client
     let refund_msg = BankMsg::Send {
-        to_address: job.client.to_string(),
-        amount: vec![job.payment_amount.clone()],
+    to_address: job.client.to_string(),
+    amount: vec![Coin {
+        denom: "umedas".to_string(),
+        amount: job.payment_amount,
+    }],
     };
     
     Ok(Response::new()
