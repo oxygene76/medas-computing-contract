@@ -35,4 +35,7 @@ pub enum ContractError {
 
     #[error("Job not in correct state")]
     InvalidJobState {},
+    InvalidJobStatus {},            
+    CancelWindowExpired {},         
+    ContractPaused {},              
 }
