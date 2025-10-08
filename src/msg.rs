@@ -113,6 +113,9 @@ pub struct PricingTier {
 pub struct ConfigResponse {
     pub community_pool: String,
     pub community_fee_percent: u64,
+    pub default_job_timeout: u64,      
+    pub heartbeat_timeout: u64,          
+    pub paused: bool,          
 }
 
 #[cw_serde]
