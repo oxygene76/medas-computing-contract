@@ -440,3 +440,337 @@ fn query_jobs_by_client(
 
     Ok(JobsResponse { jobs })
 }
+/// Heartbeat handler - providers send regular heartbeats to indicate they are online
+/// This updates the provider's last_heartbeat timestamp and sets them as active
+pub fn execute_heartbeat(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    // Update provider's heartbeat timestamp
+    PROVIDERS.update(deps.storage, &info.sender, |provider| -> Result<_, ContractError> {
+        let mut p = provider.ok_or(ContractError::ProviderNotFound {})?;
+        p.last_heartbeat = env.block.time.seconds();
+        p.active = true;
+        Ok(p)
+    })?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "heartbeat")
+        .add_attribute("provider", info.sender.to_string())
+        .add_attribute("timestamp", env.block.time.seconds().to_string()))
+}
+
+/// Update provider information - allows providers to modify their settings
+/// Can update name, endpoint, pricing, and capacity
+pub fn execute_update_provider(
+    deps: DepsMut,
+    _env: Env,
+    info: MessageInfo,
+    name: Option<String>,
+    endpoint: Option<String>,
+    pricing: Option<HashMap<String, PricingTier>>,
+    capacity: Option<u32>,
+) -> Result<Response, ContractError> {
+    // Load and update provider information
+    PROVIDERS.update(deps.storage, &info.sender, |provider| -> Result<_, ContractError> {
+        let mut p = provider.ok_or(ContractError::ProviderNotFound {})?;
+        
+        // Update fields if provided
+        if let Some(n) = name {
+            p.name = n;
+        }
+        if let Some(e) = endpoint {
+            p.endpoint = e;
+        }
+        if let Some(pr) = pricing {
+            p.pricing = pr;
+        }
+        if let Some(c) = capacity {
+            p.capacity = c;
+        }
+        
+        Ok(p)
+    })?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "update_provider")
+        .add_attribute("provider", info.sender.to_string()))
+}
+
+/// Fail a job - provider marks job as failed and client receives full refund
+/// Only the assigned provider can fail their own jobs
+pub fn execute_fail_job(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    job_id: u64,
+    reason: String,
+) -> Result<Response, ContractError> {
+    // Load job
+    let mut job = JOBS.load(deps.storage, job_id)?;
+    
+    // Only the assigned provider can fail the job
+    if info.sender != job.provider {
+        return Err(ContractError::Unauthorized {});
+    }
+    
+    // Job must be in submitted state
+    if job.status != JobStatus::Submitted {
+        return Err(ContractError::InvalidJobState {});  // ← Verwendet bestehenden Error
+    }
+    
+    // Update job status
+    job.status = JobStatus::Failed;
+    job.failure_reason = Some(reason.clone());
+    job.completed_at = Some(env.block.time);
+    JOBS.save(deps.storage, job_id, &job)?;
+    
+    // Update provider statistics
+    let mut provider = PROVIDERS.load(deps.storage, &job.provider)?;
+    provider.active_jobs = provider.active_jobs.saturating_sub(1);
+    provider.total_failed = provider.total_failed.saturating_add(1);
+    provider.reputation = calculate_reputation(&provider);
+    PROVIDERS.save(deps.storage, &job.provider, &provider)?;
+    
+    // Refund full payment to client
+    let refund_msg = BankMsg::Send {
+        to_address: job.client.to_string(),
+        amount: vec![job.payment_amount.clone()],
+    };
+    
+    Ok(Response::new()
+        .add_message(refund_msg)
+        .add_attribute("action", "fail_job")
+        .add_attribute("job_id", job_id.to_string())
+        .add_attribute("reason", reason)
+        .add_attribute("refund_amount", job.payment_amount.amount.to_string()))
+}
+
+/// Cancel a job - client can cancel within 5 minutes and receive full refund
+/// Only the client who submitted the job can cancel it
+pub fn execute_cancel_job(
+    deps: DepsMut,
+    env: Env,
+    info: MessageInfo,
+    job_id: u64,
+) -> Result<Response, ContractError> {
+    // Load job
+    let mut job = JOBS.load(deps.storage, job_id)?;
+    
+    // Only the client can cancel their job
+    if info.sender != job.client {
+        return Err(ContractError::Unauthorized {});
+    }
+    
+    // Job must be in submitted state
+    if job.status != JobStatus::Submitted {
+        return Err(ContractError::InvalidJobState {});  // ← Verwendet bestehenden Error
+    }
+    
+    // Check if within 5-minute cancellation window
+    let time_elapsed = env.block.time.seconds() - job.created_at.seconds();
+    if time_elapsed > 300 {  // 300 seconds = 5 minutes
+        return Err(ContractError::CancelWindowExpired {});
+    }
+    
+    // Update job status
+    job.status = JobStatus::Cancelled;
+    job.completed_at = Some(env.block.time);
+    JOBS.save(deps.storage, job_id, &job)?;
+    
+    // Update provider statistics (no reputation penalty for cancellation)
+    let mut provider = PROVIDERS.load(deps.storage, &job.provider)?;
+    provider.active_jobs = provider.active_jobs.saturating_sub(1);
+    PROVIDERS.save(deps.storage, &job.provider, &provider)?;
+    
+    // Refund full payment to client
+    let refund_msg = BankMsg::Send {
+        to_address: job.client.to_string(),
+        amount: vec![job.payment_amount.clone()],
+    };
+    
+    Ok(Response::new()
+        .add_message(refund_msg)
+        .add_attribute("action", "cancel_job")
+        .add_attribute("job_id", job_id.to_string())
+        .add_attribute("refund_amount", job.payment_amount.amount.to_string()))
+}
+
+/// Process timed out jobs - automatically fails and refunds jobs that exceeded their deadline
+/// Can be called by anyone to clean up expired jobs
+pub fn execute_process_timed_out_jobs(
+    deps: DepsMut,
+    env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let current_time = env.block.time.seconds();
+    let mut messages: Vec<CosmosMsg> = vec![];
+    let mut processed_jobs = vec![];
+    
+    // Iterate through all jobs to find timed out ones
+    let jobs: Vec<_> = JOBS
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<_>>>()?;
+    
+    for (job_id, mut job) in jobs {
+        // Only process submitted jobs
+        if job.status != JobStatus::Submitted {
+            continue;
+        }
+        
+        // Check if job has exceeded its deadline
+        if current_time > job.deadline {
+            // Mark job as failed
+            job.status = JobStatus::Failed;
+            job.failure_reason = Some("Timeout: Job not completed within deadline".to_string());
+            job.completed_at = Some(env.block.time);
+            JOBS.save(deps.storage, job_id, &job)?;
+            
+            // Update provider statistics (timeout counts as failure)
+            let mut provider = PROVIDERS.load(deps.storage, &job.provider)?;
+            provider.active_jobs = provider.active_jobs.saturating_sub(1);
+            provider.total_failed = provider.total_failed.saturating_add(1);
+            provider.reputation = calculate_reputation(&provider);
+            PROVIDERS.save(deps.storage, &job.provider, &provider)?;
+            
+            // Prepare refund message
+            messages.push(CosmosMsg::Bank(BankMsg::Send {
+                to_address: job.client.to_string(),
+                amount: vec![job.payment_amount.clone()],
+            }));
+            
+            processed_jobs.push(job_id);
+        }
+    }
+    
+    Ok(Response::new()
+        .add_messages(messages)
+        .add_attribute("action", "process_timed_out_jobs")
+        .add_attribute("processed_count", processed_jobs.len().to_string())
+        .add_attribute("job_ids", format!("{:?}", processed_jobs)))
+}
+
+/// Process inactive providers - deactivates providers that haven't sent heartbeat
+/// Can be called by anyone to clean up inactive providers
+pub fn execute_process_inactive_providers(
+    deps: DepsMut,
+    env: Env,
+    _info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let config = CONFIG.load(deps.storage)?;
+    let current_time = env.block.time.seconds();
+    let mut deactivated = vec![];
+    
+    // Iterate through all providers
+    let providers: Vec<_> = PROVIDERS
+        .range(deps.storage, None, None, Order::Ascending)
+        .collect::<StdResult<Vec<_>>>()?;
+    
+    for (addr, mut provider) in providers {
+        if provider.active {
+            // Check time since last heartbeat
+            let time_since_heartbeat = current_time - provider.last_heartbeat;
+            
+            // Deactivate if exceeded timeout threshold
+            if time_since_heartbeat > config.heartbeat_timeout {
+                provider.active = false;
+                PROVIDERS.save(deps.storage, &addr, &provider)?;
+                deactivated.push(addr.to_string());
+            }
+        }
+    }
+    
+    Ok(Response::new()
+        .add_attribute("action", "process_inactive_providers")
+        .add_attribute("deactivated_count", deactivated.len().to_string())
+        .add_attribute("providers", deactivated.join(",")))
+}
+
+/// Update contract configuration - admin only
+/// Can update job timeout and heartbeat timeout settings
+pub fn execute_update_config(
+    deps: DepsMut,
+    info: MessageInfo,
+    default_job_timeout: Option<u64>,
+    heartbeat_timeout: Option<u64>,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    
+    // TODO: Add admin check
+    // if info.sender != config.admin {
+    //     return Err(ContractError::Unauthorized {});
+    // }
+    
+    // Update config fields if provided
+    if let Some(timeout) = default_job_timeout {
+        config.default_job_timeout = timeout;
+    }
+    if let Some(hb_timeout) = heartbeat_timeout {
+        config.heartbeat_timeout = hb_timeout;
+    }
+    
+    CONFIG.save(deps.storage, &config)?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "update_config")
+        .add_attribute("default_job_timeout", config.default_job_timeout.to_string())
+        .add_attribute("heartbeat_timeout", config.heartbeat_timeout.to_string()))
+}
+
+/// Pause contract - emergency pause to stop all operations
+/// Admin only - useful in case of critical issues
+pub fn execute_pause_contract(
+    deps: DepsMut,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    
+    // TODO: Add admin check
+    // if info.sender != config.admin {
+    //     return Err(ContractError::Unauthorized {});
+    // }
+    
+    config.paused = true;
+    CONFIG.save(deps.storage, &config)?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "pause_contract")
+        .add_attribute("paused", "true"))
+}
+
+/// Unpause contract - resume operations after emergency pause
+/// Admin only
+pub fn execute_unpause_contract(
+    deps: DepsMut,
+    info: MessageInfo,
+) -> Result<Response, ContractError> {
+    let mut config = CONFIG.load(deps.storage)?;
+    
+    // TODO: Add admin check
+    // if info.sender != config.admin {
+    //     return Err(ContractError::Unauthorized {});
+    // }
+    
+    config.paused = false;
+    CONFIG.save(deps.storage, &config)?;
+    
+    Ok(Response::new()
+        .add_attribute("action", "unpause_contract")
+        .add_attribute("paused", "false"))
+}
+
+/// Calculate provider reputation based on success rate
+/// Returns a decimal percentage (0-100)
+fn calculate_reputation(provider: &Provider) -> Decimal {
+    let total = provider.total_completed + provider.total_failed;
+    
+    // Return 100% if no jobs completed yet
+    if total == 0 {
+        return Decimal::percent(100);
+    }
+    
+    // Calculate success rate as percentage
+    let success_rate = provider.total_completed as f64 / total as f64;
+    Decimal::from_ratio((success_rate * 100.0) as u128, 1u128)
+}
