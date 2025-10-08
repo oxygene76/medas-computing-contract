@@ -35,7 +35,10 @@ pub enum ContractError {
 
     #[error("Job not in correct state")]
     InvalidJobState {},
-    InvalidJobStatus {},            
-    CancelWindowExpired {},         
-    ContractPaused {},              
+    
+    #[error("Cancel window expired - jobs can only be cancelled within 5 minutes of submission")]
+    CancelWindowExpired {},
+
+    #[error("Contract is paused - operations are temporarily disabled")]
+    ContractPaused {},         
 }
