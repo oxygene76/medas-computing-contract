@@ -1,5 +1,5 @@
 use cosmwasm_schema::{cw_serde, QueryResponses};
-use cosmwasm_std::{Addr, Decimal, Timestamp, Uint128};
+use cosmwasm_std::{Decimal, Timestamp, Uint128};
 use std::collections::HashMap;
 
 #[cw_serde]
