@@ -55,8 +55,8 @@ pub enum JobStatus {
     Processing,
     Completed,
     Failed,
+    Cancelled, 
 }
-
 impl JobStatus {
     pub fn to_string(&self) -> String {
         match self {
@@ -64,6 +64,7 @@ impl JobStatus {
             JobStatus::Processing => "processing".to_string(),
             JobStatus::Completed => "completed".to_string(),
             JobStatus::Failed => "failed".to_string(),
+            JobStatus::Cancelled => "cancelled".to_string(),  // Add this
         }
     }
 }
