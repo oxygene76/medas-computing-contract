@@ -10,6 +10,9 @@ use crate::msg::{PricingTier, ServiceCapability};
 pub struct Config {
     pub community_pool: Addr,
     pub community_fee_percent: u64,
+    pub default_job_timeout: u64,      
+    pub heartbeat_timeout: u64,        
+    pub paused: bool,                  
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -26,6 +29,7 @@ pub struct Provider {
     pub reputation: Decimal,
     pub active: bool,
     pub registered_at: Timestamp,
+    pub last_heartbeat: u64,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -41,6 +45,8 @@ pub struct Job {
     pub result_url: Option<String>,
     pub created_at: Timestamp,
     pub completed_at: Option<Timestamp>,
+    pub deadline: u64,                 
+    pub failure_reason: Option<String>, 
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
