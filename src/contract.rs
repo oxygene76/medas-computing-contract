@@ -162,6 +162,9 @@ pub fn execute_submit_job(
         return Err(ContractError::NoPayment {});
     }
 
+    // Load config for timeout - ADD THIS LINE!
+    let config = CONFIG.load(deps.storage)?;
+
     // Create job
     let job_id = NEXT_JOB_ID.update(deps.storage, |id| -> StdResult<_> { Ok(id + 1) })?;
 
