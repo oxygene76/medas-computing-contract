@@ -87,7 +87,11 @@ pub enum QueryMsg {
         start_after: Option<u64>,
         limit: Option<u32>,
     },
-    ListActiveProviders {},       
+    
+    #[returns(ProvidersResponse)]  // ADD THIS
+    ListActiveProviders {},
+    
+    #[returns(ProviderResponse)]    // ADD THIS  
     GetProviderStats { address: String }, 
 }
 
