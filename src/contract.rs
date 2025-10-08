@@ -323,6 +323,9 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     Ok(ConfigResponse {
         community_pool: config.community_pool.to_string(),
         community_fee_percent: config.community_fee_percent,
+        default_job_timeout: config.default_job_timeout,      
+        heartbeat_timeout: config.heartbeat_timeout,          
+        paused: config.paused,                                
     })
 }
 
