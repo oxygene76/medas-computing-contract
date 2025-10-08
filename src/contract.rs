@@ -6,6 +6,8 @@ use cosmwasm_std::{
 
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
+use std::collections::HashMap;
+use crate::msg::PricingTier;
 
 use crate::error::ContractError;
 use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, JobResponse, JobsResponse, 
