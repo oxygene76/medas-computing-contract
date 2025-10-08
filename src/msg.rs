@@ -150,7 +150,9 @@ pub struct JobResponse {
 pub struct JobsResponse {
     pub jobs: Vec<JobResponse>,
 }
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
+// CORRECT:
+#[cw_serde]
 pub struct MigrateMsg {
+    pub default_job_timeout: Option<u64>,  // ADD THIS
     pub heartbeat_timeout: Option<u64>,
 }
