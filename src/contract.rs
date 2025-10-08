@@ -1,6 +1,6 @@
 use cosmwasm_std::{
-    entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, 
-    DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
+    entry_point, to_json_binary, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, 
+    DepsMut, Env, MessageInfo, Order, Response, StdResult,
 };
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
