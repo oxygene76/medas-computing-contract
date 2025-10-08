@@ -2,16 +2,13 @@ use cosmwasm_std::{
     entry_point, to_json_binary, Addr, BankMsg, Binary, Coin, CosmosMsg, Decimal, Deps, 
     DepsMut, Env, MessageInfo, Order, Response, StdResult, Uint128,
 };
-
-
 use cw2::set_contract_version;
 use cw_storage_plus::Bound;
-use std::collections::HashMap;
-use crate::msg::PricingTier;
+use std::collections::HashMap;  // ADD THIS
 
 use crate::error::ContractError;
 use crate::msg::{ConfigResponse, ExecuteMsg, InstantiateMsg, JobResponse, JobsResponse, 
-    MigrateMsg, ProviderResponse, ProvidersResponse, QueryMsg};
+    MigrateMsg, PricingTier, ProviderResponse, ProvidersResponse, QueryMsg};  // ADD PricingTier
 
 use crate::state::{
     Config, Job, JobStatus, Provider, CONFIG, JOBS, JOBS_BY_CLIENT, JOBS_BY_PROVIDER,
