@@ -6,6 +6,8 @@ use std::collections::HashMap;
 pub struct InstantiateMsg {
     pub community_pool: String,
     pub community_fee_percent: u64, // 15 = 15%
+     pub default_job_timeout: u64,      
+    pub heartbeat_timeout: u64,  
 }
 
 #[cw_serde]
@@ -29,7 +31,30 @@ pub enum ExecuteMsg {
     UpdateProviderStatus {
         active: bool,
     },
+    UpdateProvider {                   
+        name: Option<String>,
+        endpoint: Option<String>,
+        pricing: Option<HashMap<String, PricingTier>>,
+        capacity: Option<u32>,
+    },
+    HeartBeat {},                     
+    FailJob {                          
+        job_id: u64,
+        reason: String,
+    },
+    CancelJob {                       
+        job_id: u64,
+    },
+    ProcessTimedOutJobs {},            
+    ProcessInactiveProviders {},       
+    UpdateConfig {                     
+        default_job_timeout: Option<u64>,
+        heartbeat_timeout: Option<u64>,
+    },
+    PauseContract {},                  
+    UnpauseContract {},                
 }
+
 
 #[cw_serde]
 #[derive(QueryResponses)]
@@ -62,6 +87,8 @@ pub enum QueryMsg {
         start_after: Option<u64>,
         limit: Option<u32>,
     },
+    ListActiveProviders {},       
+    GetProviderStats { address: String }, 
 }
 
 #[cw_serde]
